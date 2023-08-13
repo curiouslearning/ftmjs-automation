@@ -36,14 +36,15 @@ def hello_http(request):
 	    <https://flask.palletsprojects.com/en/1.1.x/api/#flask.make_response>.
 	"""
 	## main code
-
+	# connect to google sheets api
 	gc = pygsheets.authorize(service_file=secfile)
 	gc.drive.enable_team_drive(teamid);
 
-
+	#get arguments from the url
 	request_json = request.get_json(silent=True)
 	request_args = request.args
 
+	#check for action in arguments, default to list
 	if request_json and 'act' in request_json:
 		command = request_json['act']
 	elif request_args and 'act' in request_args:
@@ -51,6 +52,7 @@ def hello_http(request):
 	else:
 		command = 'list'
 
+	#fetch sheet id, default to None
 	if request_json and 'sheet' in request_json:
 		sheetid = request_json['sheet']
 	elif request_args and 'act' in request_args:
@@ -58,6 +60,7 @@ def hello_http(request):
 	else:
 		sheetid = None
 
+	#handle each command
 	if (command == "list"):
 		return slist(gc);
 	elif (command == "fetch"):
@@ -67,53 +70,67 @@ def hello_http(request):
 	else:
 		return "unknown command";
 
+# lists the spreadsheet titles currently accessible
 def slist(gc):
-
 	resstr = gc.spreadsheet_titles()
 	return resstr;
 
+# return the values from a spreadsheet
 def fetch(gc,sheetid):
 	fetchedsheet = gc.open_by_key(sheetid);
 	fetchedvalue = fetchedsheet[0].get_values("A1","B150")
 	return fetchedvalue;
 
-
+# utility function to remove spaces and turn things lowercase
 def removeSpaces (lst):
 	lst = [x.lstrip()for x in lst if x != ' ']
 	lst = [x.strip() for x in lst if x != ' ']
 	lst = [x.lower() for x in lst if x != ' ']
 	return lst
+# utility function to wrap each letter object as a StoneText
 def cleanletter(lobj):
+	# deal with alternate formats if coming from xml
 	if (isinstance(lobj,str)):
 		return {"StoneText": lobj}
 	else:
 		return {"StoneText": lobj['#text']}
+
+# generate a foil stone based on the letters taught so far
 def makeFoil (foilstones, levelletters, targetletter):
 	foils = foilstones + levelletters + levelletters
 	nf = targetletter
+	# ideally return a foil stone that is Not the target letter
 	while (nf == targetletter):
 		nf = foils[random.randrange(len(foils))]
-
 	return nf
 
 def generate(gc, sheetid):
 	res = [];
+	# connect to the spreadsheet
 	fetchedsheet = gc.open_by_key(sheetid);
+	# fetch the level content cells
 	fetchedvalue = fetchedsheet[0].get_values("A1","B150")
+	# fetch the metadata cells
 	fetchedmeta = fetchedsheet[1].get_values("A1","B20")
+	# pull name and version information
 	langname = fetchedmeta[0][1]
 	majversion = int(fetchedmeta[1][1])
 	minversion = int(fetchedmeta[2][1])
+	# increment minor version
 	minversion += 1
 	variant = fetchedmeta[3][1]
 	apptitle = fetchedmeta[4][1]
+	# split feedback audios and texts into an array
 	fbtext = fetchedmeta[5][1].split(",")
 	fbaudio = fetchedmeta[6][1].split(",")
 	rownum = 0;
 	foilstones = [];
+	# set location of existing level templates
 	indir = './input_154/'
 	cleanlangname = langname.lower()
 	assetbase = "https://feedthemonster.curiouscontent.org/lang/" + cleanlangname + "/audios/"
+
+	# create the javascript object that will be converted to the json file
 	bigobj = {"title": apptitle,"RightToLeft":False,"FeedbackTexts":fbtext,
 	"majversion":majversion,"minversion":minversion,"langname":langname,"FeedbackAudios":fbaudio,
 	"OtherAudios":{
@@ -122,14 +139,16 @@ def generate(gc, sheetid):
 		"Are you sure": "https://feedthemonster.curiouscontent.org/lang/" + cleanlangname + "/audios/are-you-sure.mp3"
 	}}
 	bigobj["Levels"] = [];
+	# go through each row
 	for row in fetchedvalue:
 		levelbase = {};
 		f = "level" + str(rownum) + ".xml"
-
+		# parse the xml template for that level
 		tree = ET.parse (os.path.join(indir,f))
 		treeRoot = tree.getroot()
 		group = int(treeRoot.get('LettersGroup'))
 		leveltype = row[1]
+		# copy over level type information
 		fadeout = treeRoot.get('HideCallout')
 		if (fadeout == "-1"):
 			fadeout = 0;
@@ -147,7 +166,7 @@ def generate(gc, sheetid):
 		if (leveltype == "matchSound" or leveltype == "spellSound"):
 			ptype = "Hidden"
 			fadeout = 0;
-
+		#create javascript object for the level
 		levelbase["LevelMeta"] = {
 		"LevelNumber":rownum, "PromptType":ptype,
 		"LevelType":ltype, "csvType":leveltype,
@@ -155,12 +174,15 @@ def generate(gc, sheetid):
 		messylettersinlevel = row[0].split(",")
 		lettersinlevel = [x for x in messylettersinlevel if x !=' ']
 		lettersinlevel = removeSpaces(lettersinlevel)
+		# initialize empty arrays
 		targets = []
 		audionames = []
 		foiltargets = []
 		prompttexts = []
+		# handle letter matching levels
 		if (leveltype == "match" or leveltype == "matchSound"):
 			for nl in lettersinlevel:
+				# everything is just the target letter
 				nl = nl.strip('[]').lower()
 				if (nl not in foilstones):
 					foilstones.append(nl)
@@ -168,12 +190,12 @@ def generate(gc, sheetid):
 				foiltargets.append(nl)
 				audionames.append(nl)
 				prompttexts.append(nl)
+		# handle matchfirst levels
 		if (leveltype == "matchfirst"):
-
 			for nl in lettersinlevel:
+				#seperate target from the rest of the word
 				therest = []
 				targ = nl[nl.find('(') + 1 : nl.find(')')]
-				#print(targ)
 				rl = nl[nl.find(')')+1:]
 				therest.append(rl)
 				targ = targ.strip('[]').lower()
@@ -181,10 +203,11 @@ def generate(gc, sheetid):
 					foilstones.append(targ)
 				targets.append(cleanletter(targ))
 				audionames.append(targ)
+				# print full word as prompt text
 				prompttexts.append(targ + ''.join(therest))
 				foiltargets.append(targ)
-			#print (therest)
 
+		# handle spell levels
 		if (leveltype == "spell" or leveltype == "spellSound"):
 			for nw in lettersinlevel:
 				targ = []
@@ -216,11 +239,14 @@ def generate(gc, sheetid):
 		levelbase["Puzzles"] = [];
 		xmpuz = treeRoot[0]
 		sn = 0;
+		# create each segment object
 		for pt in targets:
+			# make sure target is returned as an array
 			if hasattr(pt, "__len__") and len(pt) > 1:
 				npt = pt
 			else:
 				npt = [pt,]
+			# build audio file url
 			apth = assetbase + audionames[sn] + ".mp3"
 			nseg = {"SegmentNumber": sn, "targetstones": npt,
 			"prompt":{
@@ -229,6 +255,7 @@ def generate(gc, sheetid):
 			}
 			};
 			fstones = [];
+			# how many foil stones to generate?
 			numfoil= len(xmpuz[sn].find("Stones"))
 			for i in range(numfoil):
 				nfoil = makeFoil(foilstones,foiltargets,pt)
@@ -238,13 +265,19 @@ def generate(gc, sheetid):
 			levelbase["Puzzles"].append(nseg)
 		bigobj["Levels"].append(levelbase)
 
-	#post-generation
+	#post-generation!!
+
+	# update min version number
 	fetchedsheet[1].update_value("B3",minversion)
 	now = datetime.now()
+	# updated update time
 	fetchedsheet[1].update_value("B8",now.strftime("%m/%d/%Y, %H:%M:%S"))
+
+	#experimental - save a copy of this json file as a log
 	with open("./logs/" + cleanlangname + "-" + str(majversion) + "-" + str(minversion) + ".json", "w") as json_file:
 
 		json_file.write(json.dumps(bigobj))
 		json_file.close()
 
+	# output json object contents
 	return json.dumps(bigobj);

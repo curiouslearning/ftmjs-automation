@@ -82,27 +82,28 @@ def fetch(gc,sheetid):
 	return fetchedvalue;
 
 # utility function to remove spaces and turn things lowercase
-def removeSpaces (lst):
-	lst = [x.lstrip()for x in lst if x != ' ']
-	lst = [x.strip() for x in lst if x != ' ']
-	lst = [x.lower() for x in lst if x != ' ']
-	return lst
+def removeSpaces (myString):
+	myString = [x.lstrip()for x in myString if x != ' ']
+	myString = [x.strip() for x in myString if x != ' ']
+	myString = [x.lower() for x in myString if x != ' ']
+	return myString
 # utility function to wrap each letter object as a StoneText
-def cleanletter(lobj):
+def cleanletter(letterObject):
 	# deal with alternate formats if coming from xml
-	if (isinstance(lobj,str)):
-		return {"StoneText": lobj}
+	if (isinstance(letterObject,str)):
+		return {"StoneText": letterObject}
 	else:
-		return {"StoneText": lobj['#text']}
+		return {"StoneText": letterObject['#text']}
 
 # generate a foil stone based on the letters taught so far
 def makeFoil (foilstones, levelletters, targetletter):
 	foils = foilstones + levelletters + levelletters
-	nf = targetletter
+	newFoil = targetletter
 	# ideally return a foil stone that is Not the target letter
-	while (nf == targetletter):
-		nf = foils[random.randrange(len(foils))]
-	return nf
+	while (newFoil == targetletter):
+		newFoil = foils[random.randrange(len(foils))]
+	# do we want to check if the foil is already a foil in the level?
+	return newFoil
 
 def generate(gc, sheetid):
 	res = [];
@@ -181,88 +182,89 @@ def generate(gc, sheetid):
 		prompttexts = []
 		# handle letter matching levels
 		if (leveltype == "match" or leveltype == "matchSound"):
-			for nl in lettersinlevel:
+			for newLetter in lettersinlevel:
 				# everything is just the target letter
-				nl = nl.strip('[]').lower()
-				if (nl not in foilstones):
-					foilstones.append(nl)
-				targets.append(cleanletter(nl))
-				foiltargets.append(nl)
-				audionames.append(nl)
-				prompttexts.append(nl)
+				newLetter = newLetter.strip('[]').lower()
+				if (newLetter not in foilstones):
+					foilstones.append(newLetter)
+				targets.append(cleanletter(newLetter))
+				foiltargets.append(newLetter)
+				audionames.append(newLetter)
+				prompttexts.append(newLetter)
 		# handle matchfirst levels
 		if (leveltype == "matchfirst"):
-			for nl in lettersinlevel:
+			for newLetter in lettersinlevel:
 				#seperate target from the rest of the word
 				therest = []
-				targ = nl[nl.find('(') + 1 : nl.find(')')]
-				rl = nl[nl.find(')')+1:]
+				newTarget = newLetter[newLetter.find('(') + 1 : newLetter.find(')')]
+				rl = newLetter[newLetter.find(')')+1:]
 				therest.append(rl)
-				targ = targ.strip('[]').lower()
-				if (targ not in foilstones):
-					foilstones.append(targ)
-				targets.append(cleanletter(targ))
-				audionames.append(targ)
+				newTarget = newTarget.strip('[]').lower()
+				if (newTarget not in foilstones):
+					foilstones.append(newTarget)
+				targets.append(cleanletter(newTarget))
+				audionames.append(newTarget)
 				# print full word as prompt text
-				prompttexts.append(targ + ''.join(therest))
-				foiltargets.append(targ)
+				prompttexts.append(newTarget + ''.join(therest))
+				foiltargets.append(newTarget)
 
 		# handle spell levels
 		if (leveltype == "spell" or leveltype == "spellSound"):
-			for nw in lettersinlevel:
-				targ = []
-				hw = ""
-				lp = 0
-				targo = []
-				while (lp < len(nw) ):
-					testlet = nw[lp]
+			for newWord in lettersinlevel:
+				targetWord = []
+				actualTarget = ""
+				letterIndex = 0
+				targetObjects = []
+				while (letterIndex < len(newWord) ):
+					testlet = newWord[letterIndex]
+					# handle targets in brackets
 					if (testlet == '['):
-						lp+=1
-						testlet = nw[lp]
-						while (testlet != ']' and lp < len(nw)):
-							hw += nw[lp]
-							lp+=1
-							testlet = nw[lp]
-						targ.append(cleanletter(hw))
-						targo.append(hw)
-						foiltargets.append(hw)
-						hw = ""
+						letterIndex+=1
+						testlet = newWord[letterIndex]
+						while (testlet != ']' and letterIndex < len(newWord)):
+							actualTarget += newWord[letterIndex]
+							letterIndex+=1
+							testlet = newWord[letterIndex]
+						targetWord.append(cleanletter(actualTarget))
+						targetObjects.append(actualTarget)
+						foiltargets.append(actualTarget)
+						actualTarget = ""
 					else:
-						targ.append(cleanletter(testlet))
-						targo.append(testlet)
+						targetWord.append(cleanletter(testlet))
+						targetObjects.append(testlet)
 						foiltargets.append(testlet)
-					lp += 1
-				targets.append(targ)
-				prompttexts.append(''.join(targo))
-				audionames.append(''.join(targo))
+					letterIndex += 1
+				targets.append(targetWord)
+				prompttexts.append(''.join(targetObjects))
+				audionames.append(''.join(targetObjects))
 		rownum += 1
 		levelbase["Puzzles"] = [];
-		xmpuz = treeRoot[0]
-		sn = 0;
+		xmlData = treeRoot[0]
+		segmentNumber = 0;
 		# create each segment object
-		for pt in targets:
+		for newTarget in targets:
 			# make sure target is returned as an array
-			if hasattr(pt, "__len__") and len(pt) > 1:
-				npt = pt
+			if hasattr(newTarget, "__len__") and len(newTarget) > 1:
+				targetArray = newTarget
 			else:
-				npt = [pt,]
+				targetArray = [newTarget,]
 			# build audio file url
-			apth = assetbase + audionames[sn] + ".mp3"
-			nseg = {"SegmentNumber": sn, "targetstones": npt,
+			audioPath = assetbase + audionames[segmentNumber] + ".mp3"
+			newSegment = {"SegmentNumber": segmentNumber, "targetstones": targetArray,
 			"prompt":{
-			"PromptText":prompttexts[sn],
-			"PromptAudio":apth
+			"PromptText":prompttexts[segmentNumber],
+			"PromptAudio":audioPath
 			}
 			};
 			fstones = [];
 			# how many foil stones to generate?
-			numfoil= len(xmpuz[sn].find("Stones"))
-			for i in range(numfoil):
-				nfoil = makeFoil(foilstones,foiltargets,pt)
-				fstones.append(cleanletter(nfoil))
-			sn = sn + 1
-			nseg["foilstones"] = fstones
-			levelbase["Puzzles"].append(nseg)
+			numberOfFoils= len(xmlData[segmentNumber].find("Stones"))
+			for i in range(numberOfFoils):
+				newFoil = makeFoil(foilstones,foiltargets,newTarget)
+				fstones.append(cleanletter(newFoil))
+			segmentNumber = segmentNumber + 1
+			newSegment["foilstones"] = fstones
+			levelbase["Puzzles"].append(newSegment)
 		bigobj["Levels"].append(levelbase)
 
 	#post-generation!!
